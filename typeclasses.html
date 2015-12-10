@@ -26,16 +26,27 @@ class: center, middle
 
 ---
 
-# What is a typeclass?
-A type class is a type system construct that supports 'ad hoc polymorphism'.
-  * It is a type system construct because it is an advanced feature of some advanced type systems. Python is not included.
-  * Ad hoc polymorphism is more or les a fancy way of saying that a function can be written to operate on arbitrary types, in this case, members of the typeclass.
+# What is a type-class?
 
-A class/trait defined against a type
+A type-class is a type system construct that supports 'ad hoc polymorphism'.
+
+* It is a type system construct because it is an advanced feature of some advanced type systems. Python is not included.
+* Concretely, it is class/trait defined against a type
   * `trait Foo[T]` can define a type-class `Foo`
-  * Some type `U` is a member of type-class `Foo` if there exists an instance of `Foo[U]`.
+* Some type `U` is a member of type-class `Foo` if there exists an instance of `Foo[U]`.
+* A type `T` might be a type-class if you could naturally say "there is a `T` for that type"
+  * `Option` and `List` aren't type-classes. They're _monads_, duh!
 
+---
 
+# WTF is Polymorphism?
+
+A brief refresher from Wikipedia:
+
+**Polymorphism** is the provision of a single interface to entities of different types. A polymorphic type is one whose operations can also be applied to values of some other type(s). There are several kinds:
+* **_Ad hoc polymorphism_: when a function denotes different and potentially heterogeneous implementations depending on a limited range of individually specified types and combinations. Ad hoc polymorphism is supported in many languages using function overloading.**
+* _Parametric polymorphism_: when code is written without mention of any specific type and thus can be used transparently with any number of new types. In the object-oriented programming community, this is often known as generics or generic programming. _This is polymorphism to functional programmers._
+* _Subtyping_: when a name denotes instances of many different classes related by some common superclass. _This is polymorphism to OO programmers._
 
 ---
 
@@ -50,20 +61,18 @@ Broken down: You should be able to extend/improve things without changing them.
   * Don't change things so that you don't break any other uses of them.
 
 
-
 ---
 
-# Two bad examples: Composition and Inheritance
+# Two Insufficient Examples: Composition and Inheritance
 
-* Composition: Extend the capabilities of something by building on it
+* **Composition**: Extend the capabilities of something by building on it
   * (Generally) No substitution between inner and outer: Goodbye, Liskov!
   * There is a maintenance headache to work around this involving proxies
-* Inheritance: Extend/modify in a limited way
+* **Inheritance**: Extend/modify in a limited way
   * Trade modification guarantees for substitution!
   * Unless the trait/interface/superclass is locked down, you can modify anything and break consumers
 
-Both of these cases are fully specified when you define something, but what if you want to extend something that isn't yours?
-
+Both of these cases are fully specified when you define something, but what if you want to extend something that isn't yours, like `String`?
 
 
 ---
@@ -97,7 +106,6 @@ Issues:
 * `Adder` looks like it should be generic. `addPair` is a nice extension, but I want to use an `Adder[Tuple2[Int, Int]]` to get some REAL reuse.
 
 
-
 ---
 
 # Inheritance with Composure
@@ -125,6 +133,39 @@ Issues:
 
 ---
 
+# Doesn't Scala give us something for this.. 'Enrich my library'?
+
+Scala lets you transparently convert 1 thing to another using implicit conversions.
+This is (now) called the 'Enrich my library' pattern because it allows you to
+arbitrarily extend code that you don't own, including final classes like `String`!
+
+```scala
+implicit class RichString(val str: String) {
+  def **(times: Int): String = {
+    val sb = new StringBuilder
+    for {
+      i <- 0 until str.length
+      c = str(i)
+      x <- 1 to times
+    } sb.append(c)
+    sb.toString
+  }
+}
+
+"wtf" ** 3 // "wwwtttfff"
+```
+
+---
+
+# Where 'Enrich my library' falls short
+
+* This pattern isn't polymorphic at all.
+* This is pure composition, so any shortcomings from that still apply.
+
+![Sad Xzibit](http://cdn.meme.am/instances/500x/62664010.jpg)
+
+---
+
 # This is too abstract, I need an example: "Show" things
 
 ```scala
@@ -148,35 +189,35 @@ implicit object ShowWallet extends Show[Wallet] {
 * More types can be added as more instances of `Show` are defined for different types
 
 
-
 ---
 
 # How is this different from an Interface/Trait?
 
-Interfaces/traits are mixed into a type, essentially being bolted on. There is necessarily an is-a relationship
+Interfaces/traits are mixed into a type, essentially being bolted on. There is necessarily an **is-a** relationship
 
 These are built into the definition of a type, they can't be changed outside of that definition
 
-Type-classes, can be defined anywhere. They can even be defined multiple times, though this gets hairy, because implicits.
-
+Type-classes can be defined anywhere. They can even be defined multiple times, though this gets hairy, because implicits.
 
 
 ---
 
 # "Show" Example, Cont'd
 
-* Let's get more complicated with this type-class: `Tuple2`
-  * `Tuple2` is generic with 2 parameters. We could rely on `toString` but that is fixed and cheating.
-  * In the spirit of ad hoc polymorphism, we should utilize `Show` members to build the appropriate instance for `Tuple2[L, R]`
+Let's get more complicated with this type-class: `Tuple2`
+
+* `Tuple2` is generic with 2 parameters. We could rely on `toString` but that is fixed and cheating.
+* In the spirit of ad hoc polymorphism, we should utilize `Show` members to build the appropriate instance for `Tuple2[L, R]`
 
 ```scala
-implicit class ShowTuple[L, R](implicit showL: Show[L], implicit showR: Show[R])
-    extends Show[(L, R)] {
+implicit class ShowTuple[L, R](
+  implicit showL: Show[L],
+  showR: Show[R]
+) extends Show[(L, R)] {
 
   override def show(value: (L, R)): String =
     implicitly[Show[L]].show(value._1) + "->" + implicitly[Show[R]].show(value._2)
 }
-
 ```
 
 * Because this isn't an instance so much as a constructor, these are sometimes called _constructor classes_. Don't bother. It's a type-class constructor.
@@ -189,7 +230,7 @@ implicit class ShowTuple[L, R](implicit showL: Show[L], implicit showR: Show[R])
 
 # Brief distraction: What is a higher kind?
 
-I'm not going to go into details now, but _Kind : Type :: Type : Value_
+I'm not going to go into details now, but _Value : Type :: Kind : Type_
 
 * As an example, `3` is a value of type `Int`.
 * `Int` is a type of kind `*`, as is `List[Int]`.
@@ -199,7 +240,9 @@ I'm not going to go into details now, but _Kind : Type :: Type : Value_
 * If you don't understand or like generalizing over types, try generalizing over kinds.
 * If you aren't already confused, the kind for `Tuple2` is `(*,*) -> *`
 
+Fortunately, you only have to worry about this if you see `import scala.language.higherKinds`^
 
+<cite>^ = Unless you work with me, in which case `-language:higherKinds` is passed to _scalac_ and all bets are off.</cite>
 ---
 
 # Can we make this less painful?
@@ -217,7 +260,9 @@ Here are a few ways to help:
 
 # Context bounds
 
-`def foo[T: Bar](value: T) = ...`
+```scala
+def foo[T: Bar](value: T) = ...
+```
 
 * `T: Bar` means type `T` which must be a member of type-class `Bar`
 * This is syntax sugar for adding an implicit parameter of type `Bar[T]` without a name.
@@ -226,7 +271,6 @@ Here are a few ways to help:
 
 * If a parameter doesn't have a name, how do you use it?
   * `implicitly[...]`! Ugh.
-
 
 
 ---
@@ -279,35 +323,147 @@ implicit val IntShow = ShowBuilder[Int](_.toString)
 
 ---
 
-* What are some built-in examples?
-  * Numeric - Generic numeric operations
-  * Ordered - External definitions for ordering elements of some type
-  * ClassTag - "Reified type information", allows attachment of compile-time type information at runtime to work around type erasure with generics
+# Another Detour: Implicit Scope
 
----
+Because type-classes in Scala are built on implicits, they benefit (suffer?) from the
+rich (vastly overcomplicated) resolution rules for implicits. There is one rule in
+particular that is nice for defining default type-class instances:
 
-* What are some real-world examples of possible uses?
-  * Database Relationships
-  * Serialization
+> SLS §2.7.2: The _implicit scope_ of a type `T` consists of all _companion modules_ of
+> classes that are associated with the implicit parameter's type.
 
----
+The _implicit scope_ isn't the scope for implicits, it is the fall-back scope used for implicit resolution when no other scopes can satisfy an implicit lookup. In plainer language, if you don't have an implicit `T` in scope, the compiler will try to look in the _implicit scope_ for `T` before failing.
 
-* What are some pain-points around type-classes?
-  * Ambiguous implicit instances - Nothing stops you from defining multiple instances of a type-class for some time, except for that pesky compiler
-  * Syntax - Type-classes are not a formal language construct in Scala, they are available because of implicits and generics.
-
----
-
-* What syntax makes them not suck?
-  * Context bounds
-  * Use of `apply` in companion objects
+The _implicit scope_ is therefore a great place to put default type-class instances.
 
 
 ---
 
-Sources:
-http://danielwestheide.com/blog/2013/02/06/the-neophytes-guide-to-scala-part-12-type-classes.html
-http://aakashns.github.io/better-type-class-2.html
+# Default Type-class Instances
+
+> SLS §2.7.2: The _implicit scope_ of a type `T` consists of all _companion modules_ of
+> classes that are associated[1] with the implicit parameter's type.
+
+[1] There are several rules that define which classes are "associated". The two that we care about most for type-classes are:
+
+* The type itself
+* Type parameters of the type
+
+This means that for the type-class `Foo[Bar]`, the implicit scope includes the companion object for both `Foo` and `Bar`. This implies two things:
+
+1. For a type-class `Foo`, put various default instances for `Foo` that are obvious in the companion object of `Foo` and they'll automatically be used.
+2. For type `Bar`, put default instances of any type-classes or `Bar` in its companion object. 
+---
+
+# Give me a better example
+
+Fine.
+
+```scala
+trait Foldable[T] { // You might also call this a Monoid
+  def empty: T
+  def merge(l: T, r: T): T
+}
+
+object Foldable extends TypeClassCompanion[Foldable] {
+  // function is curried so type of fmerge can be inferred from fempty
+  def build[T](fempty: T)(fmerge: (T, T) => T) = new Foldable[T] {
+    def empty = fempty
+    def merge(l: T, r: T): T = fmerge(l, r)
+  }
+  // default Foldable[Int], could be overridden with Foldable.build(1)(_ * _)
+  implicit val intFoldable = Foldable.build(0)(_ + _)
+  implicit val strFoldable = Foldable.build("")(_ + _)
+}
+
+def foldLeft[T: Foldable](xs: List[T]): T = xs match {
+  case Nil => Foldable[T].empty
+  case x :: xs => Foldable[T].merge(x, foldLeft(xs))
+}
+
+foldLeft(List("a", "bb", "ccc")) // "abbccc"
+foldLeft(List.empty[Int]) // 0
+```
+
+
+---
+
+# Scala Built-in Examples
+
+`Numeric` - Generic numeric operations and conversions
+
+```scala
+def product[T](xs: Seq[T])(implicit n: Numeric[T]): T =
+  xs.foldLeft(n.zero)(n.times)
+```
+  
+`Ordering` - Defines comparison operations to define an ordering for a type
+
+```scala
+// From Seq
+def sorted[B >: A](implicit ord: Ordering[B]): Seq[A]
+```
+
+`ClassTag` - "Reified type information", allows attachment of compile-time type information at runtime to work around type erasure with generics
+
+```scala
+def foo[T](value: Seq[T]) = value match {
+  // Compiler warning: This case can't be tested because Seq[T] erases to Seq 
+  case strs: Seq[String] => ... 
+}
+
+def bar[T: ClassTag](value: Seq[T]) = value match {
+  // This works because the compiler utilizes the ClassTag to perform this check
+  case strs: Seq[String] => ...
+}
+```
+
+
+---
+
+# Real-world examples of possible uses?
+
+#### Database Representations and Relationships
+
+Projects like `Slick` will define schema representations as case classes and use type-classes to translate and validate data.
+
+#### Serialization
+
+A prime example for _SolidFire_ would be JSON serialization. Something like this typeclass could be used for native-speed JSON serialization and deserialization without any reflection:
+
+```scala
+trait JSON[T] {
+  def serialize(value: T): JsonData
+  // Try because we have no structural guarantees with JSON
+  def deserialize(data: JsonData): Try[T] 
+}
+```
+
+---
+
+# Do type-classes have pain-points?
+
+Of course. This isn't Haskell.
+
+#### Ambiguous implicit instances
+
+Nothing stops you from defining multiple instances of a type-class for some time, except for that pesky compiler.
+
+#### No Global Scope
+
+In Haskell, type-classes have a property called _coherence_. There is a global dictionary for all type-class instances. A type can have at most 1 type-class instance. Scala isn't Haskell, so you can define type-class instances in a bunch of places, mix and match them, and specify an instance by passing the implicit type-class argument explicitly.
+
+#### Syntax
+
+Type-classes are not a formal language construct in Scala, they are available because of implicits and generics. Context-bounds make this slightly nicer, but this still feels a bit unnatural.
+
+---
+
+## Sources
+
+* http://danielwestheide.com/blog/2013/02/06/the-neophytes-guide-to-scala-part-12-type-classes.html
+* http://aakashns.github.io/better-type-class-2.html
+* http://scala-lang.org/files/archive/spec/2.11/07-implicits.html
 
     </textarea>
     <script src="https://gnab.github.io/remark/downloads/remark-latest.min.js">
