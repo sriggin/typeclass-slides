@@ -151,6 +151,18 @@ implicit object ShowWallet extends Show[Wallet] {
 
 ---
 
+# How is this different from an Interface/Trait?
+
+Interfaces/traits are mixed into a type, essentially being bolted on. There is necessarily an is-a relationship
+
+These are built into the definition of a type, they can't be changed outside of that definition
+
+Type-classes, can be defined anywhere. They can even be defined multiple times, though this gets hairy, because implicits.
+
+
+
+---
+
 # "Show" Example, Cont'd
 
 * Let's get more complicated with this type-class: `Tuple2`
@@ -190,9 +202,37 @@ I'm not going to go into details now, but _Kind : Type :: Type : Value_
 
 ---
 
-* What are some syntax sugars that make that less painful?
-  * Context bounds: `def foo[T: Bar](value: T) = ...` defines a function `foo` on type `T` which must be a member of type-class `Bar`
-  * Companion objects and `apply`:
+# Can we make this less painful?
+
+Of course, Scala has a ridiculously complex syntax for cases like this!
+
+Here are a few ways to help:
+* Context Bounds
+* Companion objects with `apply`
+* Type-class builders
+
+
+
+---
+
+# Context bounds
+
+`def foo[T: Bar](value: T) = ...`
+
+* `T: Bar` means type `T` which must be a member of type-class `Bar`
+* This is syntax sugar for adding an implicit parameter of type `Bar[T]` without a name.
+
+  `def foo[T](value: T)(implicit ev$: Bar[T]) = ...`
+
+* If a parameter doesn't have a name, how do you use it?
+  * `implicitly[...]`! Ugh.
+
+
+
+---
+
+# Companion objects and `apply`:
+
 ```scala
 trait Foo[T] { ... } // some type-class
 
@@ -203,14 +243,36 @@ object Foo {
 implicitly[Foo[T]] /* is now equivalent to */ Foo[T]
 ```
 
+This can be generalized with this trait:
+
+```scala
+import scala.language.higherKinds // You know what follows will be good
+
+trait TypeClassCompanion[TypeClass[_]] {
+  @inline def apply[T: TypeClass]: TypeClass[T] = implicitly[TypeClass[T]]
+}
+
+object Foo extends TypeClassCompanion[Foo] // Begone, superfluous line of code!
+```
+
 ---
 
-* How is it different from an Interface/Trait?
-  * Interfaces/traits are mixed into a type, essentially being bolted on. There is necessarily an is-a relationship
-  * These are built into the definition of a type, they can't be changed outside of that definition
-  * As an example, try to add a capability to String and see how that works out for you.
+# Type-class builders
 
----
+This is only mentioned because it looks like a Seanism, which is something I like.
+
+```scala
+trait Show[T] {
+  def show(value: T): String
+}
+
+class ShowBuilder[T](fn: T => String) extends Show[T] {
+  override def show(value: T): String = fn(value)
+}
+
+implicit val IntShow = ShowBuilder[Int](_.toString)
+// WOW THAT'S UNREADABLY TERSE, THANKS SEAN!
+```
 
 * What do typeclasses accomplish?
 * They allow you to define arbitrary capabilities for some type completely separate from the type itself
