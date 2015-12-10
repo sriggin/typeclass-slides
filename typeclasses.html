@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Title</title>
+    <meta charset="utf-8">
+    <style>
+      @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+      body { font-family: 'Droid Serif'; }
+      h1, h2, h3 {
+        font-family: 'Yanone Kaffeesatz';
+        font-weight: normal;
+      }
+      .remark-code, .remark-inline-code { font-family: 'Ubuntu Mono'; }
+    </style>
+  </head>
+  <body>
+    <textarea id="source">
+
+class: center, middle
+# Type-classes: WTF are those?!
+
+
+
+---
+
+# What is a typeclass?
+A type class is a type system construct that supports 'ad hoc polymorphism'.
+  * It is a type system construct because it is an advanced feature of some advanced type systems. Python is not included.
+  * Ad hoc polymorphism is more or les a fancy way of saying that a function can be written to operate on arbitrary types, in this case, members of the typeclass.
+
+A class/trait defined against a type
+  * `trait Foo[T]` can define a type-class `Foo`
+  * Some type `U` is a member of type-class `Foo` if there exists an instance of `Foo[U]`.
+
+
+
+---
+
+# The Open/Closed Principle
+
+> Software entities (classes, modules, functions, etc.) should be open for extension, but closed for modification
+
+Principles are important to software, or something.
+
+Broken down: You should be able to extend/improve things without changing them.
+  * Extend/improve things to make them more reusable, more capable, safer, etc.
+  * Don't change things so that you don't break any other uses of them.
+
+
+
+---
+
+# Two bad examples: Composition and Inheritance
+
+* Composition: Extend the capabilities of something by building on it
+  * (Generally) No substitution between inner and outer: Goodbye, Liskov!
+  * There is a maintenance headache to work around this involving proxies
+* Inheritance: Extend/modify in a limited way
+  * Trade modification guarantees for substitution!
+  * Unless the trait/interface/superclass is locked down, you can modify anything and break consumers
+
+Both of these cases are fully specified when you define something, but what if you want to extend something that isn't yours?
+
+
+
+---
+
+# Beautiful Composition
+
+```scala
+
+interface Adder {
+  def add(left: Int, right: Int): Int
+}
+
+class ConcreteAdder {
+  //closed to modification
+  final override def add(left: Int, right: Int): Int = left + right
+}
+
+class PairAdder(adder: Adder) extends Adder {
+  // yay, re-use for the simple cost of maintenance!
+  final override  def add(left: Int, right: Int): Int = adder(left, right)
+
+  def addPair(left: (Int, Int), right: (Int, Int)): (Int, Int) = {
+    adder(left._1, right._1) -> adder(left._2, right._2)
+  } // yay, extension!
+}
+
+```
+
+Issues:
+* This example breaks down with non-trivial interfaces, of course.
+* `Adder` looks like it should be generic. `addPair` is a nice extension, but I want to use an `Adder[Tuple2[Int, Int]]` to get some REAL reuse.
+
+
+
+---
+
+# Inheritance with Composure
+
+```scala
+class Adder {
+  def add(left: Int, right: Int): Int = left + right
+}
+
+class Arithmeticker extends Adder {
+  def subtract(left: Int, right: Int) = add(left, -right)
+}
+
+class Madder extends Adder {
+  //oops, my finger slipped, I swear!
+  override def add(left: Int, right: Int): Int = left - right
+}
+```
+
+Issues:
+* Extensions are limited to what is left open to extension (non-final)
+  * Want to extend `String`? You're SOL!
+* Mistakes in sub-classes can break invariants of super-class
+
+
+---
+
+# This is too abstract, I need an example: "Show" things
+
+```scala
+trait Show[T] {
+  def show(value: T): String
+}
+
+implicit object ShowInt extends Show[Int] {
+  def show(value: Int) = value.toString
+}
+
+case class Wallet(cash: Double, cards: List[String])
+
+implicit object ShowWallet extends Show[Wallet] {
+  def show(value: Wallet) = "$" + value.cash +
+    " and a bunch of cards: " + value.cards.mkString(", ")
+}
+```
+
+* `Int` and `Wallet` are members of type-class `Show`
+* More types can be added as more instances of `Show` are defined for different types
+
+
+
+---
+
+# "Show" Example, Cont'd
+
+* Let's get more complicated with this type-class: `Tuple2`
+  * `Tuple2` is generic with 2 parameters. We could rely on `toString` but that is fixed and cheating.
+  * In the spirit of ad hoc polymorphism, we should utilize `Show` members to build the appropriate instance for `Tuple2[L, R]`
+
+```scala
+implicit class ShowTuple[L, R](implicit showL: Show[L], implicit showR: Show[R])
+    extends Show[(L, R)] {
+
+  override def show(value: (L, R)): String =
+    implicitly[Show[L]].show(value._1) + "->" + implicitly[Show[R]].show(value._2)
+}
+
+```
+
+* Because this isn't an instance so much as a constructor, these are sometimes called _constructor classes_. Don't bother. It's a type-class constructor.
+* What is special about `Tuple2`? It's generic! 
+* But why does that matter? It's a _higher kind_.
+
+
+
+---
+
+# Brief distraction: What is a higher kind?
+
+I'm not going to go into details now, but _Kind : Type :: Type : Value_
+
+* As an example, `3` is a value of type `Int`.
+* `Int` is a type of kind `*`, as is `List[Int]`.
+* `List` is a type of kind `* -> *`. Just think about that.
+  * This can be thought of as a type-constructor.
+  * `T => List[T]` looks like `* -> *` if you squint.
+* If you don't understand or like generalizing over types, try generalizing over kinds.
+* If you aren't already confused, the kind for `Tuple2` is `(*,*) -> *`
+
+
+---
+
+* What are some syntax sugars that make that less painful?
+  * Context bounds: `def foo[T: Bar](value: T) = ...` defines a function `foo` on type `T` which must be a member of type-class `Bar`
+  * Companion objects and `apply`:
+```scala
+trait Foo[T] { ... } // some type-class
+
+object Foo {
+  def apply[T](implicit evidence: Foo[T]): Foo[T] = evidence
+}
+
+implicitly[Foo[T]] /* is now equivalent to */ Foo[T]
+```
+
+---
+
+* How is it different from an Interface/Trait?
+  * Interfaces/traits are mixed into a type, essentially being bolted on. There is necessarily an is-a relationship
+  * These are built into the definition of a type, they can't be changed outside of that definition
+  * As an example, try to add a capability to String and see how that works out for you.
+
+---
+
+* What do typeclasses accomplish?
+* They allow you to define arbitrary capabilities for some type completely separate from the type itself
+
+---
+
+* What are some built-in examples?
+  * Numeric - Generic numeric operations
+  * Ordered - External definitions for ordering elements of some type
+  * ClassTag - "Reified type information", allows attachment of compile-time type information at runtime to work around type erasure with generics
+
+---
+
+* What are some real-world examples of possible uses?
+  * Database Relationships
+  * Serialization
+
+---
+
+* What are some pain-points around type-classes?
+  * Ambiguous implicit instances - Nothing stops you from defining multiple instances of a type-class for some time, except for that pesky compiler
+  * Syntax - Type-classes are not a formal language construct in Scala, they are available because of implicits and generics.
+
+---
+
+* What syntax makes them not suck?
+  * Context bounds
+  * Use of `apply` in companion objects
+
+
+---
+
+Sources:
+http://danielwestheide.com/blog/2013/02/06/the-neophytes-guide-to-scala-part-12-type-classes.html
+http://aakashns.github.io/better-type-class-2.html
+
+    </textarea>
+    <script src="https://gnab.github.io/remark/downloads/remark-latest.min.js">
+    </script>
+    <script>
+      var slideshow = remark.create();
+    </script>
+  </body>
+</html>
